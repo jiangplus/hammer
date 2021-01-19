@@ -1,0 +1,10 @@
+name = "example-job"
+desc = "example job for hammer"
+
+[[tasks]]
+name = "hello"
+command = "echo hello world"
+
+[[tasks]]
+name = "start"
+command = "ls -l"

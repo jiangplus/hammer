@@ -1,0 +1,6 @@
+/data/
+.idea
+.DS_Store
+/hammer
+
+.env

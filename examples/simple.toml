@@ -1,0 +1,22 @@
+name = "simple-job"
+author = "jiang"
+desc = "example job for hammer"
+labels = ["example"]
+
+params = { some = "hello world" }
+
+[[tasks]]
+name = "hello"
+command = "echo {{some}}"
+inputs = [
+    { s3 = "s3://titan/pypi/", path = "data2/" }
+]
+outputs = [
+    { s3 = "s3://titan/pypix/", path = "data/" }
+]
+
+[[tasks]]
+name = "start"
+command = "env | grep HAM"
+envs = [ "HAM_CODE=YES" ]
+deps = ["hello"]
