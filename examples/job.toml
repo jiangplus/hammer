@@ -1,4 +1,4 @@
-name = "example-job"
+name = "example"
 desc = "example job for hammer"
 
 [[tasks]]

@@ -9,7 +9,6 @@ import (
 	"net/http"
 )
 
-
 func jsonify(value interface{}) io.Reader {
 	jsonValue, _ := json.Marshal(value)
 	fmt.Println(jsonValue)

@@ -2,15 +2,17 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"log"
 	"bytes"
+	"os/exec"
+	"strings"
+	"io/ioutil"
+	yamlutil "gopkg.in/yaml.v2"
+	"github.com/osteele/liquid"
 	"github.com/BurntSushi/toml"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"io/ioutil"
-	"github.com/osteele/liquid"
-	"os"
-	"log"
-	"os/exec"
 )
 
 type JobSpec struct {
@@ -114,8 +116,19 @@ func TaskRunner() {
 	}
 
 	var jobspec JobSpec
-	if _, err := toml.Decode(string(data), &jobspec); err != nil {
-		panic(err)
+	if strings.HasSuffix(filename, ".toml") {
+		if _, err := toml.Decode(string(data), &jobspec); err != nil {
+			log.Fatalf("error: %v", err)
+			panic(err)
+		}
+	} else if strings.HasSuffix(filename, ".yaml") {
+		err := yamlutil.Unmarshal([]byte(data), &jobspec)
+		if err != nil {
+			log.Fatalf("error: %v", err)
+			panic(err)
+		}
+	} else {
+		panic("cannot recognize data format")
 	}
 
 	tasks := jobspec.Tasks
