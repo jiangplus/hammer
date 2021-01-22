@@ -1,0 +1,4 @@
+name: example
+tasks:
+- name: main
+  command: 'echo HELLO'

@@ -1,4 +1,4 @@
-name = "simple-job"
+name = "example"
 author = "jiang"
 desc = "example job for hammer"
 labels = ["example"]

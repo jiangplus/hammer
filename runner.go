@@ -20,6 +20,7 @@ type JobSpec struct {
 	Author string
 	Desc   string
 	Labels []string
+	Envs    []string
 	Tasks  []TaskSpec
 	Params map[string]interface{}
 }
@@ -91,7 +92,6 @@ func renderCommand(ctx JobContext, command string) string {
 }
 
 func execTask(ctx JobContext, task TaskSpec) {
-	fmt.Println("downloading")
 	for _, input := range task.Inputs {
 		fmt.Println(input)
 		DownloadS3Dir(ctx.S3Session, ctx.S3Client, input.S3, input.Path)
@@ -100,7 +100,6 @@ func execTask(ctx JobContext, task TaskSpec) {
 	command := renderCommand(ctx, task.Command)
 	execCmd(command, task.Envs)
 
-	fmt.Println("uploading")
 	for _, output := range task.Outputs {
 		fmt.Println(output)
 		UploadS3Dir(ctx.S3Session, ctx.S3Client, output.Path, output.S3)

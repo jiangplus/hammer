@@ -1,0 +1,10 @@
+name: "example"
+desc: "example job for hammer"
+params:
+  key: mysecretkey
+tasks:
+  - name: "hello"
+    command: "env"
+    envs:
+      - "HELLO=WORLD"
+

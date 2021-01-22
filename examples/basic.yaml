@@ -5,3 +5,4 @@ tasks:
     command: "echo hello world"
   - name: "start"
     command: "ls -l"
+    deps: ["hello"]
