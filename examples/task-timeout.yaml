@@ -1,0 +1,5 @@
+name: example
+timeout: 1000
+tasks:
+  - name: main
+    command: 'sleep 10'

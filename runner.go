@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"log"
@@ -20,6 +21,7 @@ type JobSpec struct {
 	Name   string
 	Author string
 	Desc   string
+	Timeout int64
 	Labels []string
 	Envs    []string
 	Tasks  []TaskSpec
@@ -55,6 +57,7 @@ type OutputSpec struct {
 type JobContext struct {
 	S3Session *session.Session
 	S3Client  *s3.S3
+	Timeout   int64
 	Envs      []string
 	Params    map[string]interface{}
 	TaskStates map[string]TaskState
@@ -65,12 +68,16 @@ func exitErrorf(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
-func execCmd(command string, envs []string) string {
+func execCmd(command string, envs []string, timeout int64) string {
 	if command == "" {
 		panic("command is empty")
 	}
 
-	cmd := exec.Command("bash", "-c", command)
+	duration := time.Duration(timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), duration * time.Millisecond)
+	defer cancel()
+	cmd := exec.CommandContext(ctx,"bash", "-c", command)
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Env = os.Environ()
@@ -83,6 +90,7 @@ func execCmd(command string, envs []string) string {
 
 	err := cmd.Run()
 	if err != nil {
+		fmt.Println(err)
 		log.Fatal(err)
 		panic(err)
 	}
@@ -125,7 +133,7 @@ func execTask(ctx JobContext, task TaskSpec) {
 
 	envs = renderEnvs(ctx, envs)
 	command := renderCommand(ctx, task.Command)
-	execCmd(command, envs)
+	execCmd(command, envs, ctx.Timeout)
 
 	for _, output := range task.Outputs {
 		fmt.Println(output)
@@ -202,6 +210,11 @@ func TaskRunner() {
 		Params: jobspec.Params,
 		Envs: jobspec.Envs,
 		TaskStates: task_states}
+	if jobspec.Timeout == 0 {
+		ctx.Timeout = 365 * 86400 * 1000
+	} else {
+		ctx.Timeout = jobspec.Timeout
+	}
 	for _, task := range sorted_tasks {
 		execTask(ctx, task)
 	}
