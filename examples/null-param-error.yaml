@@ -1,0 +1,8 @@
+name: "example"
+desc: "example job for hammer"
+params:
+  key: null
+tasks:
+  - name: "hello-param"
+    command: "echo {{key}}"
+

@@ -148,6 +148,9 @@ func TaskRunner() {
 	if err != nil {
 		panic(err)
 	}
+	if len(data) == 0 {
+		panic("input file is empty")
+	}
 
 	var jobspec JobSpec
 	if strings.HasSuffix(filename, ".toml") {
@@ -204,6 +207,13 @@ func TaskRunner() {
 			}
 		}
 	}
+
+	for _, val := range jobspec.Params {
+		if val == nil {
+			panic(fmt.Sprintf("param %s is not set", val))
+		}
+	}
+
 	ctx := JobContext{
 		S3Session: sess,
 		S3Client: svc,
