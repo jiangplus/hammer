@@ -48,6 +48,7 @@ type JobContext struct {
 	S3Session *session.Session
 	S3Client  *s3.S3
 	Params    map[string]interface{}
+	Envs      []string
 }
 
 func exitErrorf(msg string, args ...interface{}) {
@@ -80,7 +81,7 @@ func execCmd(command string, envs []string) string {
 	return out.String()
 }
 
-func renderCommand(ctx JobContext, command string) string {
+func renderString(ctx JobContext, command string) string {
 	engine := liquid.NewEngine()
 	template := command
 	bindings := ctx.Params
@@ -91,14 +92,31 @@ func renderCommand(ctx JobContext, command string) string {
 	return out
 }
 
+func renderCommand(ctx JobContext, command string) string {
+	return renderString(ctx, command)
+}
+
+func renderEnvs(ctx JobContext, envs []string) []string {
+	new_envs := []string{}
+	for _, env := range envs {
+		new_envs = append(new_envs, renderString(ctx, env))
+	}
+	return new_envs
+}
+
 func execTask(ctx JobContext, task TaskSpec) {
 	for _, input := range task.Inputs {
 		fmt.Println(input)
 		DownloadS3Dir(ctx.S3Session, ctx.S3Client, input.S3, input.Path)
 	}
 
+    envs := []string{}
+    envs = append(envs, task.Envs...)
+	envs = append(envs, ctx.Envs...)
+
+	envs = renderEnvs(ctx, envs)
 	command := renderCommand(ctx, task.Command)
-	execCmd(command, task.Envs)
+	execCmd(command, envs)
 
 	for _, output := range task.Outputs {
 		fmt.Println(output)
@@ -157,7 +175,7 @@ func TaskRunner() {
 		}
 	}
 
-	ctx := JobContext{S3Session: sess, S3Client: svc, Params: jobspec.Params}
+	ctx := JobContext{S3Session: sess, S3Client: svc, Params: jobspec.Params, Envs: jobspec.Envs}
 	for _, task := range sorted_tasks {
 		execTask(ctx, task)
 	}

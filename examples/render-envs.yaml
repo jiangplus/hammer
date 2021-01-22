@@ -1,14 +1,12 @@
 name: "example"
 desc: "example job for hammer"
 params:
-  key: mysecretkey
+  name: HAMMER
 envs:
-  - "HELLO_GLOBAL=WORLD"
+  - "HELLO_GLOBAL=HELLO GLOBAL {{name}}"
 tasks:
   - name: "hello-env"
     command: "env | grep HELLO"
     envs:
-      - "HELLO=WORLD"
-  - name: "hello-param"
-    command: "echo {{key}}"
+      - "HELLO=HELLO {{name}}"
 
