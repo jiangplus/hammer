@@ -28,6 +28,12 @@ type JobSpec struct {
 	Params map[string]interface{}
 }
 
+type RangeSpec struct {
+	From int
+	To int
+	Step int
+}
+
 type TaskSpec struct {
 	Name    string
 	Command string
@@ -35,6 +41,9 @@ type TaskSpec struct {
 	Deps    []string
 	Inputs  []InputSpec
 	Outputs []OutputSpec
+	Params map[string]interface{}
+	WithItems []map[string]interface{} `yaml:"with_items"`
+	WithRange RangeSpec `yaml:"with_range"`
 }
 
 type TaskState struct {
@@ -98,25 +107,23 @@ func execCmd(command string, envs []string, timeout int64) string {
 	return out.String()
 }
 
-func renderString(ctx JobContext, command string) string {
+func renderString(params map[string]interface{}, command string) string {
 	engine := liquid.NewEngine()
-	template := command
-	bindings := ctx.Params
-	out, err := engine.ParseAndRenderString(template, bindings)
+	out, err := engine.ParseAndRenderString(command, params)
 	if err != nil {
 		log.Fatalln(err)
 	}
 	return out
 }
 
-func renderCommand(ctx JobContext, command string) string {
-	return renderString(ctx, command)
+func renderCommand(params map[string]interface{}, command string) string {
+	return renderString(params, command)
 }
 
-func renderEnvs(ctx JobContext, envs []string) []string {
+func renderEnvs(params map[string]interface{}, envs []string) []string {
 	new_envs := []string{}
 	for _, env := range envs {
-		new_envs = append(new_envs, renderString(ctx, env))
+		new_envs = append(new_envs, renderString(params, env))
 	}
 	return new_envs
 }
@@ -127,12 +134,20 @@ func execTask(ctx JobContext, task TaskSpec) {
 		DownloadS3Dir(ctx.S3Session, ctx.S3Client, input.S3, input.Path)
 	}
 
+	params := make(map[string]interface{})
+	for k, v := range ctx.Params {
+		params[k] = v
+	}
+	for k, v := range task.Params {
+		params[k] = v
+	}
+
     envs := []string{}
     envs = append(envs, task.Envs...)
 	envs = append(envs, ctx.Envs...)
 
-	envs = renderEnvs(ctx, envs)
-	command := renderCommand(ctx, task.Command)
+	envs = renderEnvs(params, envs)
+	command := renderCommand(params, task.Command)
 	execCmd(command, envs, ctx.Timeout)
 
 	for _, output := range task.Outputs {
@@ -226,6 +241,30 @@ func TaskRunner() {
 		ctx.Timeout = jobspec.Timeout
 	}
 	for _, task := range sorted_tasks {
-		execTask(ctx, task)
+		if len(task.WithItems) > 0 {
+			fmt.Println("with items")
+			for _, item := range task.WithItems {
+				if task.Params == nil {
+					task.Params = make(map[string]interface{})
+				}
+				task.Params["item"] = item
+				execTask(ctx, task)
+			}
+		} else if task.WithRange != (RangeSpec{}) {
+			if task.WithRange.Step == 0 {
+				task.WithRange.Step = 1
+			}
+			for i := task.WithRange.From; i <= task.WithRange.To; i+=task.WithRange.Step {
+				if task.Params == nil {
+					task.Params = make(map[string]interface{})
+				}
+				task.Params["item"] = i
+				execTask(ctx, task)
+			}
+			fmt.Println("with range")
+
+		} else {
+			execTask(ctx, task)
+		}
 	}
 }

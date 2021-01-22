@@ -1,0 +1,15 @@
+name: "example"
+desc: "example job for hammer"
+tasks:
+  - name: "loop-items"
+    command: "echo item {{item.name}} {{item.num}}"
+    with_items:
+      - {name: "alice", num: 1}
+      - {name: "bob",   num: 2}
+      - {name: "caddy", num: 3}
+  - name: "loop-range"
+    command: "echo range {{item}}"
+    with_range:
+      from: 1
+      to: 10
+      step: 1
