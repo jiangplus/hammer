@@ -1,0 +1,6 @@
+name: "example"
+desc: "example job for hammer"
+tasks:
+  - name: "start"
+    command: "ls -l"
+    deps: ["hello"]

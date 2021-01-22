@@ -1,0 +1,10 @@
+name: "example"
+desc: "example job for hammer"
+tasks:
+  - name: "hello-env"
+    command: "env | grep HELLO"
+    envs:
+      - "HELLO=WORLD {{key}}"
+  - name: "hello-param"
+    command: "echo {{key}}"
+

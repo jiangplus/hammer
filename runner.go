@@ -13,6 +13,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"time"
 )
 
 type JobSpec struct {
@@ -34,6 +35,13 @@ type TaskSpec struct {
 	Outputs []OutputSpec
 }
 
+type TaskState struct {
+	Name string
+	Status string
+	StartTime time.Time
+	EndTime time.Time
+}
+
 type InputSpec struct {
 	S3   string
 	Path string
@@ -47,8 +55,9 @@ type OutputSpec struct {
 type JobContext struct {
 	S3Session *session.Session
 	S3Client  *s3.S3
-	Params    map[string]interface{}
 	Envs      []string
+	Params    map[string]interface{}
+	TaskStates map[string]TaskState
 }
 
 func exitErrorf(msg string, args ...interface{}) {
@@ -175,7 +184,24 @@ func TaskRunner() {
 		}
 	}
 
-	ctx := JobContext{S3Session: sess, S3Client: svc, Params: jobspec.Params, Envs: jobspec.Envs}
+	task_states := map[string]TaskState{}
+	for _, task := range sorted_tasks {
+		task_states[task.Name] = TaskState{Name: task.Name, Status: "new", StartTime: time.Now()}
+	}
+	// check deps exists
+	for _, task := range sorted_tasks {
+		for _, dep := range task.Deps {
+			if _, ok = task_states[dep]; !ok {
+				panic(fmt.Sprintf("dep [%s] for task [%s] is not satified", dep, task.Name))
+			}
+		}
+	}
+	ctx := JobContext{
+		S3Session: sess,
+		S3Client: svc,
+		Params: jobspec.Params,
+		Envs: jobspec.Envs,
+		TaskStates: task_states}
 	for _, task := range sorted_tasks {
 		execTask(ctx, task)
 	}
