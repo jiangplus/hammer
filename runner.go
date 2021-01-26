@@ -44,6 +44,8 @@ type TaskSpec struct {
 	Params map[string]interface{}
 	WithItems []map[string]interface{} `yaml:"with_items"`
 	WithRange RangeSpec `yaml:"with_range"`
+	Namegen string
+	ParentTask *TaskSpec
 }
 
 type TaskState struct {
@@ -184,7 +186,71 @@ func TaskRunner() {
 	}
 
 	tasks := jobspec.Tasks
+	ok, sorted_tasks := sort_tasks(tasks)
 
+	task_states := map[string]TaskState{}
+	for _, task := range sorted_tasks {
+		task_states[task.Name] = TaskState{Name: task.Name, Status: "new", StartTime: time.Now()}
+	}
+
+	check_deps_exists(sorted_tasks, ok, task_states)
+
+	check_params_not_empty(jobspec)
+
+	ctx := JobContext{
+		S3Session:  sess,
+		S3Client:   svc,
+		Params:     jobspec.Params,
+		Envs:       jobspec.Envs,
+		TaskStates: task_states}
+
+	if jobspec.Timeout == 0 {
+		ctx.Timeout = 365 * 86400 * 1000
+	} else {
+		ctx.Timeout = jobspec.Timeout
+	}
+
+	for _, task := range sorted_tasks {
+		if len(task.WithItems) > 0 {
+			if task.Params == nil {
+				task.Params = make(map[string]interface{})
+			}
+			for _, item := range task.WithItems {
+				subtask := TaskSpec{
+					Params: task.Params,
+					Command: task.Command,
+					Envs: task.Envs,
+					Deps: task.Deps,
+					Inputs: task.Inputs,
+					Outputs: task.Outputs,
+					ParentTask: &task}
+
+				subtask.Params["item"] = item
+				subtask.Name = renderString(subtask.Params, task.Namegen)
+				fmt.Println(subtask.Name)
+
+				task_states[subtask.Name] = TaskState{Name: subtask.Name, Status: "new", StartTime: time.Now()}
+				execTask(ctx, subtask)
+			}
+		} else if task.WithRange != (RangeSpec{}) {
+			if task.WithRange.Step == 0 {
+				task.WithRange.Step = 1
+			}
+			for i := task.WithRange.From; i <= task.WithRange.To; i += task.WithRange.Step {
+				if task.Params == nil {
+					task.Params = make(map[string]interface{})
+				}
+				task.Params["item"] = i
+				execTask(ctx, task)
+			}
+
+		} else {
+			execTask(ctx, task)
+		}
+	}
+}
+
+func sort_tasks(tasks []TaskSpec) (bool, []TaskSpec) {
 	// toposort
 	graph := NewGraph(len(tasks))
 	for _, task := range tasks {
@@ -209,12 +275,10 @@ func TaskRunner() {
 			}
 		}
 	}
+	return ok, sorted_tasks
+}
 
-	task_states := map[string]TaskState{}
-	for _, task := range sorted_tasks {
-		task_states[task.Name] = TaskState{Name: task.Name, Status: "new", StartTime: time.Now()}
-	}
-	// check deps exists
+func check_deps_exists(sorted_tasks []TaskSpec, ok bool, task_states map[string]TaskState) {
 	for _, task := range sorted_tasks {
 		for _, dep := range task.Deps {
 			if _, ok = task_states[dep]; !ok {
@@ -222,49 +286,12 @@ func TaskRunner() {
 			}
 		}
 	}
+}
 
+func check_params_not_empty(jobspec JobSpec) {
 	for _, val := range jobspec.Params {
 		if val == nil {
 			panic(fmt.Sprintf("param %s is not set", val))
-		}
-	}
-
-	ctx := JobContext{
-		S3Session: sess,
-		S3Client: svc,
-		Params: jobspec.Params,
-		Envs: jobspec.Envs,
-		TaskStates: task_states}
-	if jobspec.Timeout == 0 {
-		ctx.Timeout = 365 * 86400 * 1000
-	} else {
-		ctx.Timeout = jobspec.Timeout
-	}
-	for _, task := range sorted_tasks {
-		if len(task.WithItems) > 0 {
-			fmt.Println("with items")
-			for _, item := range task.WithItems {
-				if task.Params == nil {
-					task.Params = make(map[string]interface{})
-				}
-				task.Params["item"] = item
-				execTask(ctx, task)
-			}
-		} else if task.WithRange != (RangeSpec{}) {
-			if task.WithRange.Step == 0 {
-				task.WithRange.Step = 1
-			}
-			for i := task.WithRange.From; i <= task.WithRange.To; i+=task.WithRange.Step {
-				if task.Params == nil {
-					task.Params = make(map[string]interface{})
-				}
-				task.Params["item"] = i
-				execTask(ctx, task)
-			}
-			fmt.Println("with range")
-
-		} else {
-			execTask(ctx, task)
 		}
 	}
 }

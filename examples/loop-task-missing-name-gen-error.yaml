@@ -2,7 +2,6 @@ name: "example"
 desc: "example job for hammer"
 tasks:
   - name: "loop-items"
-    namegen: "loop-item-{{item.name}}"
     command: "echo item {{item.name}} {{item.num}}"
     with_items:
       - {name: "alice", num: 1}
