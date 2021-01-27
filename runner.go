@@ -215,9 +215,9 @@ func execTask(ctx JobContext, task TaskSpec) {
 	}
 }
 
-func TaskRunner() {
+func TaskRunner(job_spec_path string) {
 	svc, sess := CreateS3Client()
-	jobspec := parseSpec()
+	jobspec := parseSpec(job_spec_path)
 	fmt.Println((jsonify(jobspec)))
 	tasks := jobspec.Tasks
 	ok, sorted_tasks := sort_tasks(tasks)
@@ -289,8 +289,7 @@ func TaskRunner() {
 	}
 }
 
-func parseSpec() JobSpec {
-	filename := os.Args[1]
+func parseSpec(filename string) JobSpec {
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
 		panic(err)
