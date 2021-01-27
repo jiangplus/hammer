@@ -1,23 +1,24 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
-	"os"
-	"log"
-	"bytes"
-	"os/exec"
-	"strings"
-	"io/ioutil"
-	yamlutil "gopkg.in/yaml.v2"
-	"github.com/osteele/liquid"
 	"github.com/BurntSushi/toml"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/osteele/liquid"
+	yamlutil "gopkg.in/yaml.v2"
+	"io/ioutil"
+	"log"
+	"os"
+	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -54,6 +55,7 @@ type TaskSpec struct {
 	ParentTask *TaskSpec
 	TaskType string `yaml:"task_type"`
 	DockerImage string `yaml:"docker_image"`
+	Binds []string
 }
 
 type TaskState struct {
@@ -88,7 +90,7 @@ func exitErrorf(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
-func execDocker(command string, docker_image string, envs []string) string {
+func execDocker(command string, docker_image string, envs []string, binds []string) string {
 	if command == "" {
 		panic("command is empty")
 	}
@@ -99,11 +101,31 @@ func execDocker(command string, docker_image string, envs []string) string {
 		panic(err)
 	}
 
+	fmt.Println(binds)
+	var host_config *container.HostConfig = nil
+	if len(binds) > 0 {
+		for _, i := range binds {
+			splited := strings.Split(i, ":")
+			source := splited[0]
+			target := splited[1]
+			host_config = &container.HostConfig{
+				Mounts: []mount.Mount{
+					{
+						Type:   mount.TypeBind,
+						Source: source,
+						Target: target,
+					},
+				},
+			}
+		}
+	}
+
 	resp, err := cli.ContainerCreate(ctx, &container.Config{
 		Image: docker_image,
 		Cmd:   []string{"sh", "-c", command},
+		Env:   envs,
 		Tty:   false,
-	}, nil, nil, nil, "")
+	}, host_config, nil, nil, "")
 	if err != nil {
 		panic(err)
 	}
@@ -204,7 +226,7 @@ func execTask(ctx JobContext, task TaskSpec) {
 	command := renderCommand(params, task.Command)
 
 	if task.TaskType == "docker" {
-		execDocker(command, task.DockerImage , envs)
+		execDocker(command, task.DockerImage , envs, task.Binds)
 	} else {
 		execCmd(command, envs, ctx.Timeout)
 	}
@@ -248,6 +270,7 @@ func TaskRunner(job_spec_path string) {
 	} else {
 		ctx.Runtime = jobspec.TaskType
 	}
+
 
 	for _, task := range sorted_tasks {
 		if len(task.WithItems) > 0 {

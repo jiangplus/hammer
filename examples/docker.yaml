@@ -6,7 +6,11 @@ tasks:
     task_type: docker
     docker_image: alpine
   - name: "start"
-    command: "ls -l"
+    command: "echo $HELLO; ls -l /data"
     deps: ["hello"]
     task_type: docker
     docker_image: alpine
+    envs:
+      - "HELLO=DockerWorld"
+    binds:
+      - /home/ubuntu:/data
