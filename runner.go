@@ -160,31 +160,7 @@ func execTask(ctx JobContext, task TaskSpec) {
 
 func TaskRunner() {
 	svc, sess := CreateS3Client()
-	filename := os.Args[1]
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		panic(err)
-	}
-	if len(data) == 0 {
-		panic("input file is empty")
-	}
-
-	var jobspec JobSpec
-	if strings.HasSuffix(filename, ".toml") {
-		if _, err := toml.Decode(string(data), &jobspec); err != nil {
-			log.Fatalf("error: %v", err)
-			panic(err)
-		}
-	} else if strings.HasSuffix(filename, ".yaml") {
-		err := yamlutil.Unmarshal([]byte(data), &jobspec)
-		if err != nil {
-			log.Fatalf("error: %v", err)
-			panic(err)
-		}
-	} else {
-		panic("cannot recognize data format")
-	}
-
+	jobspec := parseSpec()
 	tasks := jobspec.Tasks
 	ok, sorted_tasks := sort_tasks(tasks)
 
@@ -194,7 +170,6 @@ func TaskRunner() {
 	}
 
 	check_deps_exists(sorted_tasks, ok, task_states)
-
 	check_params_not_empty(jobspec)
 
 	ctx := JobContext{
@@ -217,12 +192,12 @@ func TaskRunner() {
 			}
 			for _, item := range task.WithItems {
 				subtask := TaskSpec{
-					Params: task.Params,
-					Command: task.Command,
-					Envs: task.Envs,
-					Deps: task.Deps,
-					Inputs: task.Inputs,
-					Outputs: task.Outputs,
+					Params:     task.Params,
+					Command:    task.Command,
+					Envs:       task.Envs,
+					Deps:       task.Deps,
+					Inputs:     task.Inputs,
+					Outputs:    task.Outputs,
 					ParentTask: &task}
 
 				subtask.Params["item"] = item
@@ -248,6 +223,34 @@ func TaskRunner() {
 			execTask(ctx, task)
 		}
 	}
+}
+
+func parseSpec() JobSpec {
+	filename := os.Args[1]
+	data, err := ioutil.ReadFile(filename)
+	if err != nil {
+		panic(err)
+	}
+	if len(data) == 0 {
+		panic("input file is empty")
+	}
+
+	var jobspec JobSpec
+	if strings.HasSuffix(filename, ".toml") {
+		if _, err := toml.Decode(string(data), &jobspec); err != nil {
+			log.Fatalf("error: %v", err)
+			panic(err)
+		}
+	} else if strings.HasSuffix(filename, ".yaml") {
+		err := yamlutil.Unmarshal([]byte(data), &jobspec)
+		if err != nil {
+			log.Fatalf("error: %v", err)
+			panic(err)
+		}
+	} else {
+		panic("cannot recognize data format")
+	}
+	return jobspec
 }
 
 func sort_tasks(tasks []TaskSpec) (bool, []TaskSpec) {
