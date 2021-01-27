@@ -90,7 +90,8 @@ func exitErrorf(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
-func execDocker(command string, docker_image string, envs []string, binds []string) string {
+
+func execDocker(task_name string, command string, docker_image string, envs []string, binds []string) string {
 	if command == "" {
 		panic("command is empty")
 	}
@@ -225,8 +226,11 @@ func execTask(ctx JobContext, task TaskSpec) {
 	envs = renderEnvs(params, envs)
 	command := renderCommand(params, task.Command)
 
+
 	if task.TaskType == "docker" {
-		execDocker(command, task.DockerImage , envs, task.Binds)
+		execDocker(task.Name, command, task.DockerImage , envs, task.Binds)
+	} else if task.TaskType == "kubernetes" {
+		execKuber("hello", "echo hello", "alpine", []string{}, []string{})
 	} else {
 		execCmd(command, envs, ctx.Timeout)
 	}
@@ -270,7 +274,6 @@ func TaskRunner(job_spec_path string) {
 	} else {
 		ctx.Runtime = jobspec.TaskType
 	}
-
 
 	for _, task := range sorted_tasks {
 		if len(task.WithItems) > 0 {

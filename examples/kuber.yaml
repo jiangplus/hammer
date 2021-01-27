@@ -1,0 +1,16 @@
+name: "example"
+desc: "example job for hammer"
+tasks:
+  - name: "hello"
+    command: "echo hello world"
+    task_type: kubernetes
+    docker_image: alpine
+  - name: "start"
+    command: "echo $HELLO; ls -l /data"
+    deps: ["hello"]
+    task_type: kubernetes
+    docker_image: alpine
+    envs:
+      - "HELLO=DockerWorld"
+    binds:
+      - /home/ubuntu:/data

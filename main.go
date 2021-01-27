@@ -29,9 +29,9 @@ func http_request(url string, data io.Reader) {
 }
 
 func main() {
-
 	runCmd := flag.NewFlagSet("run", flag.ExitOnError)
 	job_spec_path := runCmd.String("job", "", "job spec path")
+
 	switch os.Args[1] {
 	case "run":
 		runCmd.Parse(os.Args[2:])
