@@ -1,0 +1,12 @@
+name: "example"
+desc: "example job for hammer"
+tasks:
+  - name: "hello"
+    command: "echo hello"
+    deps: [ "mid" ]
+  - name: "mid"
+    command: "echo mid"
+    deps: ["start"]
+  - name: "start"
+    command: "echo start"
+    deps: ["hello"]

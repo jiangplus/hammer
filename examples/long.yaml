@@ -1,0 +1,26 @@
+name: "example"
+desc: "example job for hammer"
+params:
+  alpha: "null"
+  beta: 0.6
+  datafile: data/mydataset
+envs:
+  - runner=python
+  - data=ds-{{alpha}}
+tasks:
+  - name: first
+    namegen: first-{{item}}
+    command: "echo {{datafile}} {{item}}"
+    with_items:
+      - hello
+      - world
+  - name: second
+    namegen: second-{{item.name}}
+    command: "echo {{item.name}}-{{item.children[1]}}"
+    deps: [first]
+    with_items:
+      - { 'name': 'hello', 'children': [ 'i', 'j', 'k' ] }
+      - { 'name': 'world', 'children': [ 'l', 'm', 'n' ] }
+  - name: third
+    command: "echo finished"
+    deps: [second]

@@ -42,7 +42,7 @@ type TaskSpec struct {
 	Inputs  []InputSpec
 	Outputs []OutputSpec
 	Params map[string]interface{}
-	WithItems []map[string]interface{} `yaml:"with_items"`
+	WithItems []interface{} `yaml:"with_items"`
 	WithRange RangeSpec `yaml:"with_range"`
 	Namegen string
 	ParentTask *TaskSpec
