@@ -3,6 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"os"
 	"log"
 	"bytes"
@@ -26,6 +30,8 @@ type JobSpec struct {
 	Envs    []string
 	Tasks  []TaskSpec
 	Params map[string]interface{}
+	TaskType string `yaml:"task_type"`
+	DockerImage string `yaml:"docker_image"`
 }
 
 type RangeSpec struct {
@@ -46,6 +52,8 @@ type TaskSpec struct {
 	WithRange RangeSpec `yaml:"with_range"`
 	Namegen string
 	ParentTask *TaskSpec
+	TaskType string `yaml:"task_type"`
+	DockerImage string `yaml:"docker_image"`
 }
 
 type TaskState struct {
@@ -72,11 +80,55 @@ type JobContext struct {
 	Envs      []string
 	Params    map[string]interface{}
 	TaskStates map[string]TaskState
+	Runtime string
 }
 
 func exitErrorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
 	os.Exit(1)
+}
+
+func execDocker(command string, docker_image string, envs []string) string {
+	if command == "" {
+		panic("command is empty")
+	}
+
+	ctx := context.Background()
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		panic(err)
+	}
+
+	resp, err := cli.ContainerCreate(ctx, &container.Config{
+		Image: docker_image,
+		Cmd:   []string{"sh", "-c", command},
+		Tty:   false,
+	}, nil, nil, nil, "")
+	if err != nil {
+		panic(err)
+	}
+
+	if err := cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+		panic(err)
+	}
+
+	statusCh, errCh := cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			panic(err)
+		}
+	case <-statusCh:
+	}
+
+	out, err := cli.ContainerLogs(ctx, resp.ID, types.ContainerLogsOptions{ShowStdout: true})
+	if err != nil {
+		panic(err)
+	}
+
+	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
+
+    return resp.ID
 }
 
 func execCmd(command string, envs []string, timeout int64) string {
@@ -150,7 +202,12 @@ func execTask(ctx JobContext, task TaskSpec) {
 
 	envs = renderEnvs(params, envs)
 	command := renderCommand(params, task.Command)
-	execCmd(command, envs, ctx.Timeout)
+
+	if task.TaskType == "docker" {
+		execDocker(command, task.DockerImage , envs)
+	} else {
+		execCmd(command, envs, ctx.Timeout)
+	}
 
 	for _, output := range task.Outputs {
 		fmt.Println(output)
@@ -161,6 +218,7 @@ func execTask(ctx JobContext, task TaskSpec) {
 func TaskRunner() {
 	svc, sess := CreateS3Client()
 	jobspec := parseSpec()
+	fmt.Println((jsonify(jobspec)))
 	tasks := jobspec.Tasks
 	ok, sorted_tasks := sort_tasks(tasks)
 
@@ -183,6 +241,12 @@ func TaskRunner() {
 		ctx.Timeout = 365 * 86400 * 1000
 	} else {
 		ctx.Timeout = jobspec.Timeout
+	}
+
+	if jobspec.TaskType == "" {
+		ctx.Runtime = "local"
+	} else {
+		ctx.Runtime = jobspec.TaskType
 	}
 
 	for _, task := range sorted_tasks {
