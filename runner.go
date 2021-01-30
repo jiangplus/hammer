@@ -83,7 +83,7 @@ type JobContext struct {
 	Timeout   int64
 	Envs      []string
 	Params    map[string]interface{}
-	TaskStates map[string]TaskState
+	TaskStates map[string]*TaskState
 	Runtime string
 	TaskMap map[string]map[string]bool
 }
@@ -152,7 +152,7 @@ func execDocker(task_name string, command string, docker_image string, envs []st
 
 	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
 
-    return resp.ID
+	return resp.ID
 }
 
 func execCmd(command string, envs []string, timeout int64) string {
@@ -220,8 +220,8 @@ func execTask(ctx JobContext, task TaskSpec) {
 		params[k] = v
 	}
 
-    envs := []string{}
-    envs = append(envs, task.Envs...)
+	envs := []string{}
+	envs = append(envs, task.Envs...)
 	envs = append(envs, ctx.Envs...)
 
 	envs = renderEnvs(params, envs)
@@ -250,10 +250,10 @@ func TaskRunner(job_spec_path string) {
 
 	ok, sorted_tasks := sort_tasks(tasks)
 
-	task_states := map[string]TaskState{}
+	task_states := map[string]*TaskState{}
 	task_map := map[string]map[string]bool{}
 	for _, task := range sorted_tasks {
-		task_states[task.Name] = TaskState{Name: task.Name, Status: "new", StartTime: time.Now(), Task: &task}
+		task_states[task.Name] = &TaskState{Name: task.Name, Status: "new", StartTime: time.Now(), Task: &task}
 
 		if task_map[task.Name] == nil {
 			task_map[task.Name] = make(map[string]bool)
@@ -292,15 +292,13 @@ func TaskRunner(job_spec_path string) {
 	var wg sync.WaitGroup
 
 	for worker_id := 1; worker_id <= 3; worker_id++ {
-		go worker(worker_id, &wg, ctx, task_chan, result_chan)
+		go worker(worker_id, &wg, ctx, task_chan, result_chan, sorted_tasks)
 	}
 
 	for _, task := range sorted_tasks {
 		if satisfied(task, ctx) {
 			// modify task_state status
-			task_state := ctx.TaskStates[task.Name]
-			task_state.Status = "running"
-			ctx.TaskStates[task.Name] = task_state
+			ctx.TaskStates[task.Name].Status = "running"
 
 			wg.Add(1)
 			task_chan <- task
@@ -316,23 +314,7 @@ func TaskRunner(job_spec_path string) {
 
 func reschedule(result_chan chan string, ctx JobContext, sorted_tasks []TaskSpec, wg sync.WaitGroup, task_chan chan TaskSpec) {
 	for result := range result_chan {
-
-		for k, _ := range ctx.TaskMap {
-			delete(ctx.TaskMap[k], result)
-		}
-
-		for _, task := range sorted_tasks {
-			if satisfied(task, ctx) {
-				// modify task_state status
-				task_state := ctx.TaskStates[task.Name]
-				task_state.Status = "running"
-				ctx.TaskStates[task.Name] = task_state
-
-				wg.Add(1)
-				task_chan <- task
-				fmt.Println("started dep task", task.Name)
-			}
-		}
+		fmt.Println(result)
 	}
 }
 
@@ -345,13 +327,28 @@ func satisfied(task TaskSpec, ctx JobContext) bool {
 	}
 }
 
-func worker(id int, wg *sync.WaitGroup, ctx JobContext, task_chan <-chan TaskSpec, result_chan chan<- string) {
+func worker(id int, wg *sync.WaitGroup, ctx JobContext, task_chan chan TaskSpec, result_chan chan<- string, sorted_tasks []TaskSpec) {
 	for task := range task_chan {
 		RunTask(task, ctx)
 		result_chan <- task.Name
-		time.Sleep(100 * time.Millisecond) // todo remove this sleep
-		wg.Done()
+		//time.Sleep(100 * time.Millisecond) // todo remove this sleep
 
+		// send dep tasks if satisfied
+		for k, _ := range ctx.TaskMap {
+			delete(ctx.TaskMap[k], task.Name) // todo handle race condiction
+		}
+		for _, task := range sorted_tasks {
+			if satisfied(task, ctx) {
+				// modify task_state status
+				ctx.TaskStates[task.Name].Status = "running"
+
+				wg.Add(1)
+				task_chan <- task
+				fmt.Println("started dep task", task.Name)
+			}
+		}
+
+		wg.Done()
 	}
 }
 
@@ -373,7 +370,7 @@ func RunTask(task TaskSpec, ctx JobContext) {
 			subtask.Params["item"] = item
 			subtask.Name = renderString(subtask.Params, task.Namegen)
 
-			ctx.TaskStates[subtask.Name] = TaskState{Name: subtask.Name, Status: "new", StartTime: time.Now()}
+			ctx.TaskStates[subtask.Name] = &TaskState{Name: subtask.Name, Status: "new", StartTime: time.Now()}
 			execTask(ctx, subtask)
 		}
 	} else if task.WithRange != (RangeSpec{}) {
@@ -448,7 +445,7 @@ func sort_tasks(tasks []TaskSpec) (bool, []TaskSpec) {
 	return ok, sorted_tasks
 }
 
-func check_deps_exists(sorted_tasks []TaskSpec, ok bool, task_states map[string]TaskState) {
+func check_deps_exists(sorted_tasks []TaskSpec, ok bool, task_states map[string]*TaskState) {
 	for _, task := range sorted_tasks {
 		for _, dep := range task.Deps {
 			if _, ok = task_states[dep]; !ok {
