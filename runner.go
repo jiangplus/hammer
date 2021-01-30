@@ -20,6 +20,7 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"sync"
 )
 
 type JobSpec struct {
@@ -63,6 +64,7 @@ type TaskState struct {
 	Status string
 	StartTime time.Time
 	EndTime time.Time
+	Task *TaskSpec
 }
 
 type InputSpec struct {
@@ -83,13 +85,13 @@ type JobContext struct {
 	Params    map[string]interface{}
 	TaskStates map[string]TaskState
 	Runtime string
+	TaskMap map[string]map[string]bool
 }
 
 func exitErrorf(msg string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, msg+"\n", args...)
 	os.Exit(1)
 }
-
 
 func execDocker(task_name string, command string, docker_image string, envs []string, binds []string) string {
 	if command == "" {
@@ -230,7 +232,7 @@ func execTask(ctx JobContext, task TaskSpec) {
 	if task.TaskType == "docker" {
 		execDocker(task.Name, command, task.DockerImage , envs, task.Binds)
 	} else if task.TaskType == "kubernetes" {
-		execKuber("hello", "echo hello", "alpine", []string{}, []string{})
+		execKuber(task.Name, command, task.DockerImage, []string{}, []string{})
 	} else {
 		execCmd(command, envs, ctx.Timeout)
 	}
@@ -249,8 +251,16 @@ func TaskRunner(job_spec_path string) {
 	ok, sorted_tasks := sort_tasks(tasks)
 
 	task_states := map[string]TaskState{}
+	task_map := map[string]map[string]bool{}
 	for _, task := range sorted_tasks {
-		task_states[task.Name] = TaskState{Name: task.Name, Status: "new", StartTime: time.Now()}
+		task_states[task.Name] = TaskState{Name: task.Name, Status: "new", StartTime: time.Now(), Task: &task}
+
+		if task_map[task.Name] == nil {
+			task_map[task.Name] = make(map[string]bool)
+		}
+		for _, dep := range task.Deps {
+			task_map[task.Name][dep] = true
+		}
 	}
 
 	check_deps_exists(sorted_tasks, ok, task_states)
@@ -261,7 +271,8 @@ func TaskRunner(job_spec_path string) {
 		S3Client:   svc,
 		Params:     jobspec.Params,
 		Envs:       jobspec.Envs,
-		TaskStates: task_states}
+		TaskStates: task_states,
+		TaskMap: task_map}
 
 	if jobspec.Timeout == 0 {
 		ctx.Timeout = 365 * 86400 * 1000
@@ -275,43 +286,111 @@ func TaskRunner(job_spec_path string) {
 		ctx.Runtime = jobspec.TaskType
 	}
 
+	task_chan := make(chan TaskSpec)
+	result_chan := make(chan string)
+
+	var wg sync.WaitGroup
+
+	for worker_id := 1; worker_id <= 3; worker_id++ {
+		go worker(worker_id, &wg, ctx, task_chan, result_chan)
+	}
+
 	for _, task := range sorted_tasks {
-		if len(task.WithItems) > 0 {
+		if satisfied(task, ctx) {
+			fmt.Println(ctx.TaskStates[task.Name].Status)
+			// modify task_state status
+			task_state := ctx.TaskStates[task.Name]
+			task_state.Status = "running"
+			ctx.TaskStates[task.Name] = task_state
+
+			wg.Add(1)
+			task_chan <- task
+			fmt.Println("done1", task.Name)
+
+		}
+	}
+
+	go reschedule(result_chan, ctx, sorted_tasks, wg, task_chan)
+
+	wg.Wait()
+}
+
+func reschedule(result_chan chan string, ctx JobContext, sorted_tasks []TaskSpec, wg sync.WaitGroup, task_chan chan TaskSpec) {
+	for result := range result_chan {
+		for k, _ := range ctx.TaskMap {
+			delete(ctx.TaskMap[k], result)
+		}
+
+		for _, task := range sorted_tasks {
+			if satisfied(task, ctx) {
+				// modify task_state status
+				task_state := ctx.TaskStates[task.Name]
+				task_state.Status = "running"
+				ctx.TaskStates[task.Name] = task_state
+
+				wg.Add(1)
+				task_chan <- task
+				fmt.Println("done2", task.Name)
+			}
+		}
+	}
+}
+
+
+func satisfied(task TaskSpec, ctx JobContext) bool {
+	if len(ctx.TaskMap[task.Name]) == 0 && ctx.TaskStates[task.Name].Status == "new" {
+		return true
+	} else {
+		return false
+	}
+}
+
+func worker(id int, wg *sync.WaitGroup, ctx JobContext, task_chan <-chan TaskSpec, result_chan chan<- string) {
+	for task := range task_chan {
+		fmt.Println("worker", id, "started  job", task.Name)
+		RunTask(task, ctx)
+		result_chan <- task.Name
+		time.Sleep(100 * time.Millisecond) // todo remove this sleep
+		wg.Done()
+	}
+}
+
+func RunTask(task TaskSpec, ctx JobContext) {
+	if len(task.WithItems) > 0 {
+		if task.Params == nil {
+			task.Params = make(map[string]interface{})
+		}
+		for _, item := range task.WithItems {
+			subtask := TaskSpec{
+				Params:     task.Params,
+				Command:    task.Command,
+				Envs:       task.Envs,
+				Deps:       task.Deps,
+				Inputs:     task.Inputs,
+				Outputs:    task.Outputs,
+				ParentTask: &task}
+
+			subtask.Params["item"] = item
+			subtask.Name = renderString(subtask.Params, task.Namegen)
+			fmt.Println(subtask.Name)
+
+			ctx.TaskStates[subtask.Name] = TaskState{Name: subtask.Name, Status: "new", StartTime: time.Now()}
+			execTask(ctx, subtask)
+		}
+	} else if task.WithRange != (RangeSpec{}) {
+		if task.WithRange.Step == 0 {
+			task.WithRange.Step = 1
+		}
+		for i := task.WithRange.From; i <= task.WithRange.To; i += task.WithRange.Step {
 			if task.Params == nil {
 				task.Params = make(map[string]interface{})
 			}
-			for _, item := range task.WithItems {
-				subtask := TaskSpec{
-					Params:     task.Params,
-					Command:    task.Command,
-					Envs:       task.Envs,
-					Deps:       task.Deps,
-					Inputs:     task.Inputs,
-					Outputs:    task.Outputs,
-					ParentTask: &task}
-
-				subtask.Params["item"] = item
-				subtask.Name = renderString(subtask.Params, task.Namegen)
-				fmt.Println(subtask.Name)
-
-				task_states[subtask.Name] = TaskState{Name: subtask.Name, Status: "new", StartTime: time.Now()}
-				execTask(ctx, subtask)
-			}
-		} else if task.WithRange != (RangeSpec{}) {
-			if task.WithRange.Step == 0 {
-				task.WithRange.Step = 1
-			}
-			for i := task.WithRange.From; i <= task.WithRange.To; i += task.WithRange.Step {
-				if task.Params == nil {
-					task.Params = make(map[string]interface{})
-				}
-				task.Params["item"] = i
-				execTask(ctx, task)
-			}
-
-		} else {
+			task.Params["item"] = i
 			execTask(ctx, task)
 		}
+
+	} else {
+		execTask(ctx, task)
 	}
 }
 
