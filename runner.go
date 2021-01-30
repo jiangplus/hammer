@@ -104,7 +104,6 @@ func execDocker(task_name string, command string, docker_image string, envs []st
 		panic(err)
 	}
 
-	fmt.Println(binds)
 	var host_config *container.HostConfig = nil
 	if len(binds) > 0 {
 		for _, i := range binds {
@@ -246,8 +245,9 @@ func execTask(ctx JobContext, task TaskSpec) {
 func TaskRunner(job_spec_path string) {
 	svc, sess := CreateS3Client()
 	jobspec := parseSpec(job_spec_path)
-	fmt.Println((jsonify(jobspec)))
+	//fmt.Println((jsonify(jobspec)))
 	tasks := jobspec.Tasks
+
 	ok, sorted_tasks := sort_tasks(tasks)
 
 	task_states := map[string]TaskState{}
@@ -297,7 +297,6 @@ func TaskRunner(job_spec_path string) {
 
 	for _, task := range sorted_tasks {
 		if satisfied(task, ctx) {
-			fmt.Println(ctx.TaskStates[task.Name].Status)
 			// modify task_state status
 			task_state := ctx.TaskStates[task.Name]
 			task_state.Status = "running"
@@ -305,7 +304,7 @@ func TaskRunner(job_spec_path string) {
 
 			wg.Add(1)
 			task_chan <- task
-			fmt.Println("done1", task.Name)
+			fmt.Println("started task", task.Name)
 
 		}
 	}
@@ -317,6 +316,7 @@ func TaskRunner(job_spec_path string) {
 
 func reschedule(result_chan chan string, ctx JobContext, sorted_tasks []TaskSpec, wg sync.WaitGroup, task_chan chan TaskSpec) {
 	for result := range result_chan {
+
 		for k, _ := range ctx.TaskMap {
 			delete(ctx.TaskMap[k], result)
 		}
@@ -330,7 +330,7 @@ func reschedule(result_chan chan string, ctx JobContext, sorted_tasks []TaskSpec
 
 				wg.Add(1)
 				task_chan <- task
-				fmt.Println("done2", task.Name)
+				fmt.Println("started dep task", task.Name)
 			}
 		}
 	}
@@ -347,11 +347,11 @@ func satisfied(task TaskSpec, ctx JobContext) bool {
 
 func worker(id int, wg *sync.WaitGroup, ctx JobContext, task_chan <-chan TaskSpec, result_chan chan<- string) {
 	for task := range task_chan {
-		fmt.Println("worker", id, "started  job", task.Name)
 		RunTask(task, ctx)
 		result_chan <- task.Name
 		time.Sleep(100 * time.Millisecond) // todo remove this sleep
 		wg.Done()
+
 	}
 }
 
@@ -372,7 +372,6 @@ func RunTask(task TaskSpec, ctx JobContext) {
 
 			subtask.Params["item"] = item
 			subtask.Name = renderString(subtask.Params, task.Namegen)
-			fmt.Println(subtask.Name)
 
 			ctx.TaskStates[subtask.Name] = TaskState{Name: subtask.Name, Status: "new", StartTime: time.Now()}
 			execTask(ctx, subtask)
