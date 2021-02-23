@@ -1,6 +1,6 @@
 // https://github.com/philopon/go-toposort
 
-package main
+package core
 
 type Graph struct {
 	nodes   []string
