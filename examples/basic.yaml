@@ -4,5 +4,5 @@ tasks:
   - name: "hello"
     command: "echo hello world"
   - name: "start"
-    command: "ls -l"
+    command: "echo task done"
     deps: ["hello"]

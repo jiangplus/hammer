@@ -17,8 +17,6 @@ var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "run hammer job locally",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("luban job")
-
 		fmt.Println(args)
 		filename := ""
 		if len(args) < 1 {
@@ -26,7 +24,7 @@ var runCmd = &cobra.Command{
 		}
 		filename = args[0]
 		fmt.Println(filename)
-		core.TaskRunner(filename)
+		core.RunPipeline(filename)
 	},
 }
 

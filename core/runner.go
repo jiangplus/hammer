@@ -23,7 +23,7 @@ import (
 	"sync"
 )
 
-type JobSpec struct {
+type PipelineSpec struct {
 	Name   string
 	Author string
 	Desc   string
@@ -77,7 +77,7 @@ type OutputSpec struct {
 	Path string
 }
 
-type JobContext struct {
+type RunContext struct {
 	S3Session *session.Session
 	S3Client  *s3.S3
 	Timeout   int64
@@ -206,7 +206,7 @@ func renderEnvs(params map[string]interface{}, envs []string) []string {
 	return new_envs
 }
 
-func execTask(ctx JobContext, task TaskSpec) {
+func ExecTask(ctx RunContext, task TaskSpec) {
 	for _, input := range task.Inputs {
 		fmt.Println(input)
 		DownloadS3Dir(ctx.S3Session, ctx.S3Client, input.S3, input.Path)
@@ -242,10 +242,9 @@ func execTask(ctx JobContext, task TaskSpec) {
 	}
 }
 
-func TaskRunner(job_spec_path string) {
+func RunPipeline(job_spec_path string) {
 	svc, sess := CreateS3Client()
 	jobspec := parseSpec(job_spec_path)
-	//fmt.Println((jsonify(jobspec)))
 	tasks := jobspec.Tasks
 
 	ok, sorted_tasks := sort_tasks(tasks)
@@ -266,7 +265,7 @@ func TaskRunner(job_spec_path string) {
 	check_deps_exists(sorted_tasks, ok, task_states)
 	check_params_not_empty(jobspec)
 
-	ctx := JobContext{
+	ctx := RunContext{
 		S3Session:  sess,
 		S3Client:   svc,
 		Params:     jobspec.Params,
@@ -312,14 +311,14 @@ func TaskRunner(job_spec_path string) {
 	wg.Wait()
 }
 
-func reschedule(result_chan chan string, ctx JobContext, sorted_tasks []TaskSpec, wg sync.WaitGroup, task_chan chan TaskSpec) {
+func reschedule(result_chan chan string, ctx RunContext, sorted_tasks []TaskSpec, wg sync.WaitGroup, task_chan chan TaskSpec) {
 	for result := range result_chan {
 		fmt.Println(result)
 	}
 }
 
 
-func satisfied(task TaskSpec, ctx JobContext) bool {
+func satisfied(task TaskSpec, ctx RunContext) bool {
 	if len(ctx.TaskMap[task.Name]) == 0 && ctx.TaskStates[task.Name].Status == "new" {
 		return true
 	} else {
@@ -327,7 +326,7 @@ func satisfied(task TaskSpec, ctx JobContext) bool {
 	}
 }
 
-func worker(id int, wg *sync.WaitGroup, ctx JobContext, task_chan chan TaskSpec, result_chan chan<- string, sorted_tasks []TaskSpec) {
+func worker(id int, wg *sync.WaitGroup, ctx RunContext, task_chan chan TaskSpec, result_chan chan<- string, sorted_tasks []TaskSpec) {
 	for task := range task_chan {
 		RunTask(task, ctx)
 		result_chan <- task.Name
@@ -352,7 +351,7 @@ func worker(id int, wg *sync.WaitGroup, ctx JobContext, task_chan chan TaskSpec,
 	}
 }
 
-func RunTask(task TaskSpec, ctx JobContext) {
+func RunTask(task TaskSpec, ctx RunContext) {
 	if len(task.WithItems) > 0 {
 		if task.Params == nil {
 			task.Params = make(map[string]interface{})
@@ -367,11 +366,15 @@ func RunTask(task TaskSpec, ctx JobContext) {
 				Outputs:    task.Outputs,
 				ParentTask: &task}
 
+			if task.Namegen == "" {
+				log.Fatalln("subtask namegen is empty")
+			}
+
 			subtask.Params["item"] = item
 			subtask.Name = renderString(subtask.Params, task.Namegen)
 
 			ctx.TaskStates[subtask.Name] = &TaskState{Name: subtask.Name, Status: "new", StartTime: time.Now()}
-			execTask(ctx, subtask)
+			ExecTask(ctx, subtask)
 		}
 	} else if task.WithRange != (RangeSpec{}) {
 		if task.WithRange.Step == 0 {
@@ -382,24 +385,24 @@ func RunTask(task TaskSpec, ctx JobContext) {
 				task.Params = make(map[string]interface{})
 			}
 			task.Params["item"] = i
-			execTask(ctx, task)
+			ExecTask(ctx, task)
 		}
 
 	} else {
-		execTask(ctx, task)
+		ExecTask(ctx, task)
 	}
 }
 
-func parseSpec(filename string) JobSpec {
+func parseSpec(filename string) PipelineSpec {
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
 		panic(err)
 	}
 	if len(data) == 0 {
-		panic("input file is empty")
+		log.Fatal("input file is empty")
 	}
 
-	var jobspec JobSpec
+	var jobspec PipelineSpec
 	if strings.HasSuffix(filename, ".toml") {
 		if _, err := toml.Decode(string(data), &jobspec); err != nil {
 			log.Fatalf("error: %v", err)
@@ -432,7 +435,7 @@ func sort_tasks(tasks []TaskSpec) (bool, []TaskSpec) {
 	}
 	result, ok := graph.Toposort()
 	if !ok {
-		panic("cycle detected")
+		log.Fatal("cycle detected")
 	}
 	sorted_tasks := []TaskSpec{}
 	for _, task_name := range result {
@@ -455,7 +458,7 @@ func check_deps_exists(sorted_tasks []TaskSpec, ok bool, task_states map[string]
 	}
 }
 
-func check_params_not_empty(jobspec JobSpec) {
+func check_params_not_empty(jobspec PipelineSpec) {
 	for _, val := range jobspec.Params {
 		if val == nil {
 			panic(fmt.Sprintf("param %s is not set", val))

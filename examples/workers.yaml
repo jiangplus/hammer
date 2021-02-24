@@ -2,11 +2,12 @@ name: "example"
 desc: "example job for hammer"
 tasks:
   - name: "first"
-    command: "echo hello world first"
+    command: "echo task1 done"
+
   - name: "second"
-    command: "echo hello world second"
+    command: "echo task2 done"
     deps: ["first"]
 
   - name: "third"
-    command: "echo hello world third"
+    command: "echo task3 done"
     deps: ["second"]

@@ -3,16 +3,18 @@ desc: "example job for hammer"
 tasks:
   - name: "first"
     command: "sleep 1"
+
   - name: "second"
-    command: "echo success"
+    command: "echo task2 done"
     deps: ["first"]
 
   - name: "third"
     command: "sleep 1"
+
   - name: "forth"
-    command: "echo success2"
+    command: "echo task4 done"
     deps: [ "third" ]
 
   - name: "fifth"
-    command: "echo success3"
+    command: "echo task5 done"
     deps: [ "second","forth" ]
