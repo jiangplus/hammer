@@ -1,0 +1,50 @@
+api: v1
+name: "example"
+desc: "example job for hammer"
+params:
+  condA: true
+  condB: false
+envs:
+  - "HELLO_GLOBAL=WORLD"
+tasks:
+  - name: "zero"
+    command: "echo task0 done"
+
+  - name: "first"
+    command: "echo task1 done"
+    deps: [ "zero" ]
+    when:
+      - input: "condA"
+
+  - name: "second"
+    command: "echo task2 done"
+    deps: [ "first" ]
+    when:
+      - input: "condA"
+        operator: eq
+        values: true
+
+  - name: "third"
+    command: "echo task3 done"
+    deps: [ "second" ]
+    when:
+      - input: "condA"
+        operator: in
+        values: [ true ]
+
+  - name: "forth"
+    command: "echo task4 done"
+    deps: [ "third" ]
+    when:
+      - input: "condB"
+
+  - name: "fifth"
+    command: "echo task5 done"
+    deps: [ "forth" ]
+    when:
+      - input: "condA"
+        operator: eq
+        values: true
+      - input: "condB"
+        operator: eq
+        values: false

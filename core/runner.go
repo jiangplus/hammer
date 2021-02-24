@@ -42,6 +42,12 @@ type RangeSpec struct {
 	Step int
 }
 
+type WhenSpec struct {
+	Input string
+	Operator string
+	Values interface{}
+}
+
 type TaskSpec struct {
 	Name    string
 	Command string
@@ -57,6 +63,7 @@ type TaskSpec struct {
 	TaskType string `yaml:"task_type"`
 	DockerImage string `yaml:"docker_image"`
 	Binds []string
+	When []WhenSpec
 }
 
 type TaskState struct {
@@ -206,10 +213,43 @@ func renderEnvs(params map[string]interface{}, envs []string) []string {
 	return new_envs
 }
 
+func contains(s []interface{}, e interface{}) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
+}
+
 func ExecTask(ctx RunContext, task TaskSpec) {
 	for _, input := range task.Inputs {
 		fmt.Println(input)
 		DownloadS3Dir(ctx.S3Session, ctx.S3Client, input.S3, input.Path)
+	}
+
+	// check when condiction
+	shouldRun := true
+	if len(task.When) > 0 {
+		for _, cond := range task.When {
+			val := ctx.Params[cond.Input]
+			if cond.Values == nil {
+				cond.Values = true
+			}
+			if cond.Operator == "eq" || cond.Operator == "" {
+				if val != cond.Values {
+					shouldRun = false
+				}
+			} else if cond.Operator == "in" {
+				condVals := cond.Values.([]interface{})
+				if !contains(condVals, val) {
+					shouldRun = false
+				}
+			}
+		}
+	}
+	if !shouldRun {
+		return
 	}
 
 	params := make(map[string]interface{})
