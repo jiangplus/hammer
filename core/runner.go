@@ -162,7 +162,7 @@ func execDocker(task_name string, command string, docker_image string, envs []st
 	return resp.ID
 }
 
-func execCmd(command string, envs []string, timeout int64) string {
+func execCmd(command string, envs []string, timeout int64) (string, error) {
 	if command == "" {
 		panic("command is empty")
 	}
@@ -185,11 +185,9 @@ func execCmd(command string, envs []string, timeout int64) string {
 	err := cmd.Run()
 	if err != nil {
 		fmt.Println(err)
-		log.Fatal(err)
-		panic(err)
 	}
 	fmt.Println(out.String())
-	return out.String()
+	return out.String(), err
 }
 
 func renderString(params map[string]interface{}, command string) string {
@@ -273,7 +271,10 @@ func ExecTask(ctx RunContext, task TaskSpec) {
 	} else if task.TaskType == "kubernetes" {
 		execKuber(task.Name, command, task.DockerImage, []string{}, []string{})
 	} else {
-		execCmd(command, envs, ctx.Timeout)
+		_, err := execCmd(command, envs, ctx.Timeout)
+		if err != nil {
+			ctx.TaskStates[task.Name].Status = "failed"
+		}
 	}
 
 	for _, output := range task.Outputs {
@@ -392,6 +393,7 @@ func worker(id int, wg *sync.WaitGroup, ctx RunContext, task_chan chan TaskSpec,
 }
 
 func RunTask(task TaskSpec, ctx RunContext) {
+
 	if len(task.WithItems) > 0 {
 		if task.Params == nil {
 			task.Params = make(map[string]interface{})

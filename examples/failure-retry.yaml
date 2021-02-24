@@ -1,0 +1,20 @@
+name: "example"
+desc: "example job for hammer"
+tasks:
+  - name: "first"
+    command: "sleep 1"
+
+  - name: "second"
+    command: "echo task2 done"
+    deps: ["first"]
+
+  - name: "third"
+    command: "sleep 0"
+
+  - name: "forth"
+    command: "exit 1"
+    deps: [ "third" ]
+
+  - name: "fifth"
+    command: "echo task5 done"
+    deps: [ "second","forth" ]
