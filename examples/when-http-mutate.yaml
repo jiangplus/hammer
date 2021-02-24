@@ -1,0 +1,16 @@
+api: v1
+name: "example"
+desc: "example job for hammer"
+params:
+  condA: false
+
+tasks:
+  - name: "zero"
+    command: "sleep 10; echo task0 done"
+
+  - name: "first"
+    command: "echo task1 done"
+    deps: [ "zero" ]
+    when:
+      - input: "condA"
+

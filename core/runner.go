@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/BurntSushi/toml"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -16,11 +17,12 @@ import (
 	yamlutil "gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 	"sync"
+	"time"
 )
 
 type PipelineSpec struct {
@@ -393,6 +395,28 @@ func worker(id int, wg *sync.WaitGroup, ctx RunContext, task_chan chan TaskSpec,
 }
 
 func RunTask(task TaskSpec, ctx RunContext) {
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/data", func (w http.ResponseWriter, r *http.Request) {
+		var data map[string]interface{}
+		decoder := json.NewDecoder(r.Body)
+		err := decoder.Decode(&data)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Fprintf(w, "Hi there, I love %s! %s", r.URL.Path[1:], data)
+		for k, v := range data {
+			ctx.Params[k] = v
+		}
+	})
+	server := http.Server{
+		Addr: ":8080",
+		Handler: mux,
+	}
+
+	go func() {
+		server.ListenAndServe()
+	}()
 
 	if len(task.WithItems) > 0 {
 		if task.Params == nil {
